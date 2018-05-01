@@ -7,9 +7,8 @@
 *.so
 *.dylib
 
-.~lock*
-*.csv
-*.sqlite3
+# Data folder
+data/**
 
 # Test binary, build with `go test -c`
 *.test
