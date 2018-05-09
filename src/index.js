@@ -98,7 +98,7 @@ function sendInfoToBlockfolio(orders, config) {
                             && `${p.base}-${p.coin}` === o.Pair
                             && p.price === o.Limit
                             && Math.abs(p.quantity) === o.Quantity
-                            && (p.quantity < 0 ? 1 : 2) === o.Type;
+                            && (p.quantity > 0 ? 1 : 2) === o.Type;
                     });
                     return found.length === 0;
                 });
@@ -112,11 +112,12 @@ function sendInfoToBlockfolio(orders, config) {
                     if (err)
                         quit(err);
 
-                    let requestCount = 0;
+                    let requestCount = 0
+                        , successCount = 0;
 
                     ordersMissingOnBlockfolio.forEach(order => {
                         let position = {
-                            mode: (order.Type === 1) ? "buy" : "sell",
+                            mode: (order.Type === 1) ? 'buy' : 'sell',
                             exchange: exchanges.filter(e => e === order.Exchange)[0].toLowerCase(),
                             price: order.Limit,
                             amount: order.Quantity,
@@ -125,16 +126,31 @@ function sendInfoToBlockfolio(orders, config) {
                                 order.Id
                         };
                         requestCount++;
+                        successCount--;
 
-                        Blockfolio.addPosition(pair, position, function (err) {
-                                if (err)
-                                    quit('Error: ' + err.message + '\n' + JSON.stringify(position));
+                        //HACK: Stop sending all of the request simultaneosly
+                        setTimeout(() => {
+                            Blockfolio.addPosition(
+                                position
+                                , function (err) {
+                                    requestCount--;
 
-                                if (requestCount-- === 0) {
-                                    m.success(pair);
+                                    if (err) {
+                                        console.error('Error adding position ' + position.pair + ': ' + err.message + '\n' + JSON.stringify(position));
+                                    } else {
+                                        successCount++;
+                                    }
+
+                                    if (requestCount === 0) {
+                                        if (successCount === 0) {
+                                            m.success(pair);
+                                        } else {
+                                            m.error(pair);
+                                        }
+                                    }
                                 }
-                            }
-                        );
+                            );
+                        }, Math.random() * 10000 - 1);
                     });
                 });
             });
