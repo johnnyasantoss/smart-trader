@@ -128,9 +128,9 @@ bcrypt-pbkdf@^1.0.0:
   dependencies:
     tweetnacl "^0.14.3"
 
-blockfolio-api-client@^0.2.3:
-  version "0.2.3"
-  resolved "https://registry.yarnpkg.com/blockfolio-api-client/-/blockfolio-api-client-0.2.3.tgz#9631eb41bc8c093d688d63da403d86f99101e59a"
+blockfolio-api-client@^1.0.0-beta2:
+  version "1.0.0-beta2"
+  resolved "https://registry.yarnpkg.com/blockfolio-api-client/-/blockfolio-api-client-1.0.0-beta2.tgz#a4bccf7cc7be10231ffc2dfa32791334a4713dde"
   dependencies:
     request "^2.85.0"
 
