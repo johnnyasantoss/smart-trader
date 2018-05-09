@@ -116,26 +116,17 @@ function sendInfoToBlockfolio(orders, config) {
 
                     ordersMissingOnBlockfolio.forEach(order => {
                         let position = {
-                            buy: order.Type === 1,
-                            pair: pair,
+                            mode: (order.Type === 1) ? "buy" : "sell",
                             exchange: exchanges.filter(e => e === order.Exchange)[0].toLowerCase(),
-                            initPrice: order.Limit,
+                            price: order.Limit,
                             amount: order.Quantity,
-                            date: new Date(order.CloseDate),
+                            timestamp: new Date(order.CloseDate).getTime(),
                             note: 'Imported using smart-trader\n' +
                                 order.Id
                         };
                         requestCount++;
 
-                        Blockfolio.addPosition(
-                            position.buy
-                            , position.pair
-                            , position.exchange
-                            , position.initPrice
-                            , position.amount
-                            , position.date
-                            , position.note
-                            , function (err) {
+                        Blockfolio.addPosition(pair, position, function (err) {
                                 if (err)
                                     quit('Error: ' + err.message + '\n' + JSON.stringify(position));
 
