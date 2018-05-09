@@ -9,6 +9,9 @@ A client to sync your trade orders from your exchanges to **Blockfolio**!
 # How to use
 
 For now the smart-trader only imports your trade orders throught `.csv` files.
+After you import all your orders you'll need to run `node index.js`
+And _voilà_ the client will start syncing your orders :smiley:
+![Sample](images/smart-trader.gif?raw=true "smart-trader.gif")
 
 ## Bittrex
  1. Go to your [History](https://bittrex.com/history)
