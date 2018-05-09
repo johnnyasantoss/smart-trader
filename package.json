@@ -8,6 +8,9 @@
   "license": "MIT",
   "private": true,
   "eslint.packageManager": "yarn",
+  "scripts": {
+    "start": "nodejs ./index.js"
+  },
   "devDependencies": {
     "eslint": "^4.19.1"
   },
