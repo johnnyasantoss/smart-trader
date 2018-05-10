@@ -1,3 +1,5 @@
+//@ts-check
+
 const console = require('console');
 const Blockfolio = require('blockfolio-api-client');
 const sqlite3 = require('sqlite3').verbose();
@@ -5,6 +7,7 @@ const yaml = require('js-yaml');
 const fs = require('fs');
 const groupBy = require('group-by');
 const Multispinner = require('multispinner');
+const async = require('async');
 
 const DATABASE_FILE = './data/db.sqlite3';
 const CONFIG_FILE = './data/config.yaml';
@@ -39,9 +42,12 @@ function getInfoFromSqlite(callback) {
 /**
  * Gets the configuration from the YAML config file
  * @see CONFIG_FILE config file path
+ * @returns {{token:string}}
  */
 function getConfiguration() {
-    var config = {};
+    var config = {
+        token: ''
+    };
 
     try {
         return yaml.safeLoad(fs.readFileSync(CONFIG_FILE, 'utf8'));
@@ -54,11 +60,11 @@ function getConfiguration() {
 
 /**
  * Send all info to Blockfolio
- * @param {[]} orders Orders array
+ * @param {[any]} orders Orders array
  * @param {{token:string,locale:string,fiat_currency:string}} config Configuration object
  * @see CONFIG_FILE to setup your own config file
  */
-function sendInfoToBlockfolio(orders, config) {
+function sendInfoToBlockfolio(orders, config, callback) {
     if (typeof orders !== typeof ([]))
         throw Error('orders should be an array!');
 
@@ -76,86 +82,95 @@ function sendInfoToBlockfolio(orders, config) {
             pairs.push(key);
         }
 
-        let m = new Multispinner(pairs);
+        const m = new Multispinner(pairs, {
+            postText: 'Synchronizing...'
+        });
 
-        for (const pair in ordersByPairs) {
-            if (!ordersByPairs.hasOwnProperty(pair))
-                throw Error('Invalid pair');
+        async.parallelLimit(
+            Object.keys(ordersByPairs).map(function (pair) {
+                return function (parallelCallback) {
+                    if (!ordersByPairs.hasOwnProperty(pair))
+                        parallelCallback(Error('Invalid pair'));
 
-            const ordersByPair = ordersByPairs[pair];
+                    const ordersByPair = ordersByPairs[pair];
 
-
-            Blockfolio.getPositions(pair, function (err, positions) {
-                if (err)
-                    quit(err.message);
-
-                positions = positions.filter(function (p) {
-                    return p.watch === 0;
-                });
-                const ordersMissingOnBlockfolio = ordersByPair.filter(function (o) {
-                    let found = positions.filter(function (p) {
-                        return p.exchange === o.Exchange
-                            && `${p.base}-${p.coin}` === o.Pair
-                            && p.price === o.Limit
-                            && Math.abs(p.quantity) === o.Quantity
-                            && (p.quantity > 0 ? 1 : 2) === o.Type;
-                    });
-                    return found.length === 0;
-                });
-
-                if (!ordersMissingOnBlockfolio || ordersMissingOnBlockfolio.length === 0) {
-                    m.success(pair);
-                    return;
-                }
-
-                Blockfolio.getExchanges(pair, function (err, exchanges) {
-                    if (err)
-                        quit(err);
-
-                    let requestCount = 0
-                        , successCount = 0;
-
-                    ordersMissingOnBlockfolio.forEach(order => {
-                        let position = {
-                            mode: (order.Type === 1) ? 'buy' : 'sell',
-                            exchange: exchanges.filter(e => e === order.Exchange)[0].toLowerCase(),
-                            price: order.Limit,
-                            amount: order.Quantity,
-                            timestamp: new Date(order.CloseDate).getTime(),
-                            note: 'Imported using smart-trader\n' +
-                                order.Id
-                        };
-                        requestCount++;
-                        successCount--;
-
-                        //HACK: Stop sending all of the request simultaneosly
-                        setTimeout(() => {
-                            Blockfolio.addPosition(
-                                position
-                                , function (err) {
-                                    requestCount--;
-
-                                    if (err) {
-                                        console.error('Error adding position ' + position.pair + ': ' + err.message + '\n' + JSON.stringify(position));
-                                    } else {
-                                        successCount++;
-                                    }
-
-                                    if (requestCount === 0) {
-                                        if (successCount === 0) {
-                                            m.success(pair);
-                                        } else {
-                                            m.error(pair);
-                                        }
-                                    }
-                                }
-                            );
-                        }, Math.random() * 10000 - 1);
-                    });
-                });
-            });
-        }
+                    sendPairInfoToBlockfolio(pair, ordersByPair, m, parallelCallback);
+                };
+            })
+            , 2
+            , callback
+        );
     });
+}
+
+/**
+ * 
+ * @param {string} pair Pair info
+ * @param {[any]} ordersByPair 
+ * @param {Multispinner} m 
+ * @param {Function} callback Callback
+ */
+function sendPairInfoToBlockfolio(pair, ordersByPair, m, callback) {
+    Blockfolio.getPositions(pair, function (err, positions) {
+        if (err)
+            callback(err);
+
+        let ordersMissingOnBlockfolio = mapMissingOrders(positions, ordersByPair);
+
+        if (!ordersMissingOnBlockfolio || ordersMissingOnBlockfolio.length === 0) {
+            m.success(pair);
+            return;
+        }
+
+        async.series(
+            ordersMissingOnBlockfolio.map(function (order) {
+                return function (callback) {
+                    let position = {
+                        mode: (order.Type === 1) ? 'buy' : 'sell',
+                        exchange: order.Exchange.toLowerCase(),
+                        price: order.Limit,
+                        amount: order.Quantity,
+                        timestamp: new Date(order.CloseDate).getTime(),
+                        note: 'Imported using smart-trader\n' +
+                            order.Id
+                    };
+
+                    Blockfolio.addPosition(pair, position, function (err) {
+                        if (err)
+                            callback(err);
+                        callback(null, position);
+                    });
+                };
+            })
+            , function (err, results) {
+                console.log(results);
+
+                if (err)
+                    m.error(pair);
+                else
+                    m.success(pair);
+            }
+        );
+    });
+}
+
+function mapMissingOrders(positions, ordersByPair) {
+    positions = positions.filter(function (p) {
+        return p.watchOnly === 0;
+    });
+
+    const ordersMissingOnBlockfolio = ordersByPair.filter(function (o) {
+        let found = positions.filter(function (p) {
+            return p.exchange === o.Exchange
+                && `${p.base}-${p.coin}` === o.Pair
+                && p.price === o.Limit
+                && Math.abs(p.quantity) === o.Quantity
+                && (p.quantity > 0 ? 1 : 2) === o.Type;
+        });
+        return found.length === 0;
+    });
+
+    return ordersMissingOnBlockfolio;
 }
 
 /**
@@ -171,15 +186,24 @@ function quit(msg) {
 function main() {
     const CONFIG = getConfiguration();
 
-    if (!('token' in CONFIG))
+    if (!('token' in CONFIG) || !CONFIG.token)
         quit('Missing token in "' + CONFIG_FILE + '".');
-    if (!('locale' in CONFIG))
-        CONFIG.locale = 'en-US';
-    if (!('fiat_currency' in CONFIG))
-        CONFIG.fiat_currency = 'usd';
+    if (!('locale' in CONFIG) || !CONFIG.locale)
+        CONFIG['locale'] = 'en-US';
+    if (!('fiat_currency' in CONFIG) || !CONFIG.fiat_currency)
+        CONFIG['fiat_currency'] = 'usd';
 
     getInfoFromSqlite(function (orders) {
-        sendInfoToBlockfolio(orders, CONFIG);
+        sendInfoToBlockfolio(
+            orders
+            , CONFIG
+            , function (err) {
+                if (err)
+                    quit(err);
+
+                process.exit(0);
+            }
+        );
     });
 }
 
