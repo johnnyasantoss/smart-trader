@@ -86,19 +86,52 @@ function sendInfoToBlockfolio(orders, config, callback) {
             postText: 'Synchronizing...'
         });
 
-        async.parallelLimit(
-            Object.keys(ordersByPairs).map(function (pair) {
-                return function (parallelCallback) {
-                    if (!ordersByPairs.hasOwnProperty(pair))
-                        parallelCallback(Error('Invalid pair'));
+        let sendQueue = async.queue(
+            function (position, queueCallback) {
+                if (!position)
+                    queueCallback(new Error('Invalid pair'));
 
-                    const ordersByPair = ordersByPairs[pair];
+                Blockfolio.addPosition(position.originalPair, position, function (err) {
+                    if (err) {
+                        m.error(position.originalPair);
+                        queueCallback(err);
+                        return;
+                    }
+                    m.success(position.originalPair);
+                    queueCallback();
+                });
+            }
+            , 1
+        );
 
-                    sendPairInfoToBlockfolio(pair, ordersByPair, m, parallelCallback);
-                };
-            })
-            , 2
-            , callback
+        let conversionQueue = async.queue(
+            function (pair, queueCallback) {
+                if (!ordersByPairs.hasOwnProperty(pair))
+                    queueCallback(Error('Invalid pair'));
+
+                const ordersByPair = ordersByPairs[pair];
+
+                generateOrders(pair, ordersByPair, function (err, positions) {
+                    if (positions === true) {
+                        m.success(pair);
+                    } else if (positions) {
+                        positions.forEach(position => {
+                            position.originalPair = pair;
+                        });
+                        sendQueue.push(positions);
+                    }
+                    queueCallback(err);
+                });
+            }
+            , 4
+        );
+
+        conversionQueue.push(
+            Object.keys(ordersByPairs)
+            , function (err) {
+                if (err)
+                    quit(err);
+            }
         );
     });
 }
@@ -107,56 +140,39 @@ function sendInfoToBlockfolio(orders, config, callback) {
  * 
  * @param {string} pair Pair info
  * @param {[any]} ordersByPair 
- * @param {Multispinner} m 
  * @param {Function} callback Callback
  */
-function sendPairInfoToBlockfolio(pair, ordersByPair, m, callback) {
-    Blockfolio.getPositions(pair, function (err, positions) {
+function generateOrders(pair, ordersByPair, callback) {
+    Blockfolio.getPositions({ pair }, function (err, positions) {
         if (err)
             callback(err);
 
         let ordersMissingOnBlockfolio = mapMissingOrders(positions, ordersByPair);
 
         if (!ordersMissingOnBlockfolio || ordersMissingOnBlockfolio.length === 0) {
-            m.success(pair);
+            callback(null, true);
             return;
         }
 
-        async.series(
-            ordersMissingOnBlockfolio.map(function (order) {
-                return function (callback) {
-                    let position = {
-                        mode: (order.Type === 1) ? 'buy' : 'sell',
-                        exchange: order.Exchange.toLowerCase(),
-                        price: order.Limit,
-                        amount: order.Quantity,
-                        timestamp: new Date(order.CloseDate).getTime(),
-                        note: 'Imported using smart-trader\n' +
-                            order.Id
-                    };
+        let blockfolioPositions = ordersMissingOnBlockfolio.map(function (order) {
+            return {
+                mode: (order.Type === 1) ? 'buy' : 'sell',
+                exchange: order.Exchange.toLowerCase(),
+                price: order.Limit,
+                amount: order.Quantity,
+                timestamp: new Date(order.CloseDate).getTime(),
+                note: 'Imported using smart-trader\n' +
+                    order.Id
+            };
+        });
 
-                    Blockfolio.addPosition(pair, position, function (err) {
-                        if (err)
-                            callback(err);
-                        callback(null, position);
-                    });
-                };
-            })
-            , function (err, results) {
-                console.log(results);
-
-                if (err)
-                    m.error(pair);
-                else
-                    m.success(pair);
-            }
-        );
+        callback(null, blockfolioPositions);
     });
 }
 
 function mapMissingOrders(positions, ordersByPair) {
     positions = positions.filter(function (p) {
-        return p.watchOnly === 0;
+        return p.watch === 0;
     });
 
     const ordersMissingOnBlockfolio = ordersByPair.filter(function (o) {
