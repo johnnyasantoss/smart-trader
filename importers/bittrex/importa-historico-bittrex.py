@@ -90,8 +90,7 @@ def garantir_existencia_tabela(cursor):
 
 
 def importar_informacao_csv(arquivo_csv):
-    with codecs.open(arquivo_csv, mode='rb', encoding='utf-8') as conteudo_csv:
-        conteudo_csv = (line.replace('\0', '') for line in conteudo_csv)
+    with codecs.open(arquivo_csv, mode='rb', encoding='utf-16le') as conteudo_csv:
         leitor = csv.DictReader(conteudo_csv, delimiter=',')
 
         print('Lendo {0} colunas {1}'.format(

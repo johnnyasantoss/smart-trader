@@ -6,6 +6,17 @@
             "request": "launch",
             "name": "Debug Program",
             "program": "${workspaceFolder}/index.js"
-        }
+        },
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "./data/fullHistory.csv",
+                "./data/db.sqlite3"
+            ]
+        },
     ]
 }
