@@ -12,7 +12,7 @@
     "start": "nodejs ./index.js"
   },
   "devDependencies": {
-    "eslint": "^6.2.1"
+    "eslint": "^6.2.2"
   },
   "dependencies": {
     "blockfolio-api-client": "^1.0.2",
