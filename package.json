@@ -19,6 +19,6 @@
     "group-by": "^0.0.1",
     "js-yaml": "^3.11.0",
     "multispinner": "^0.2.1",
-    "sqlite3": "^4.1.1"
+    "sqlite3": "^5.0.0"
   }
 }
